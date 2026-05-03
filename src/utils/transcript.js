@@ -58,25 +58,47 @@ async function postTranscript(client, channel, ticketData) {
   const fileName = `transcript-${channel.name}-${Date.now()}.txt`;
   const attachment = new AttachmentBuilder(buffer, { name: fileName });
 
+  const isPurchase = ticketData.type === 'purchase';
+  const statusMap = { red: '🔴 Not Verified', orange: '🟠 Pending', green: '🟢 Verified' };
+
   const summaryEmbed = new EmbedBuilder()
-    .setColor(ticketData.type === 'purchase' ? colors.primary : colors.dark)
+    .setColor(isPurchase ? colors.primary : colors.dark)
     .setTitle(`📋  Ticket Closed — ${channel.name}`)
     .addFields(
-      { name: 'Type', value: ticketData.type === 'purchase' ? '🛒 Design Request' : '🎧 Support', inline: true },
+      { name: 'Type', value: isPurchase ? '🛒 Design Request' : '🎧 Support', inline: true },
       { name: 'Opened By', value: `<@${ticketData.openedBy}>`, inline: true },
       { name: 'Closed By', value: ticketData.closedBy ? `<@${ticketData.closedBy}>` : 'System', inline: true },
-      { name: 'Channel', value: `#${channel.name}`, inline: true },
       { name: 'Duration', value: formatDuration(channel.createdAt, new Date()), inline: true },
     )
     .setTimestamp()
     .setFooter({ text: `${serverName} • Ticket Logs` });
 
+  if (ticketData.orderId) {
+    summaryEmbed.addFields({ name: 'Order ID', value: ticketData.orderId, inline: true });
+  }
   if (ticketData.robloxUsername) {
     summaryEmbed.addFields({ name: 'Roblox Username', value: ticketData.robloxUsername, inline: true });
   }
   if (ticketData.paymentStatus) {
-    const statusMap = { red: '🔴 Not Verified', orange: '🟠 Pending', green: '🟢 Verified' };
-    summaryEmbed.addFields({ name: 'Payment Status', value: statusMap[ticketData.paymentStatus] || 'Unknown', inline: true });
+    summaryEmbed.addFields({ name: 'Final Status', value: statusMap[ticketData.paymentStatus] || 'Unknown', inline: true });
+  }
+
+  if (ticketData.closingReport) {
+    const r = ticketData.closingReport;
+    summaryEmbed.addFields({ name: '\u200B', value: '**— Staff Closing Report —**', inline: false });
+
+    if (isPurchase) {
+      summaryEmbed.addFields(
+        { name: 'Payment Completed?', value: r.paymentCompleted || 'N/A', inline: true },
+        { name: 'Design Delivered?', value: r.designDelivered || 'N/A', inline: true },
+        { name: 'Closing Notes', value: r.closeNotes || 'None', inline: false },
+      );
+    } else {
+      summaryEmbed.addFields(
+        { name: 'Issue Resolved?', value: r.issueResolved || 'N/A', inline: true },
+        { name: 'Closing Notes', value: r.closeNotes || 'None', inline: false },
+      );
+    }
   }
 
   await logChannel.send({ embeds: [summaryEmbed], files: [attachment] });
