@@ -10,6 +10,9 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const { colors, channels, roles, serverName } = require('../config');
+const { getNextOrderId } = require('./database');
+
+const STATUS_EMOJIS = { white: '⚪', red: '🔴', orange: '🟠', green: '🟢' };
 
 function buildPurchasePanel() {
   const embed = new EmbedBuilder()
@@ -122,7 +125,7 @@ function buildPurchaseModal() {
         .setCustomId('description')
         .setLabel('Description')
         .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('Describe your design in detail — colors, text, badges, layout, references, etc.')
+        .setPlaceholder('Describe your design — colors, text, badges, layout, references, etc.')
         .setRequired(true)
         .setMaxLength(1000)
     ),
@@ -167,17 +170,76 @@ function buildSupportModal() {
   return modal;
 }
 
-function buildPurchaseTicketEmbed(fields, user) {
+function buildCloseModal(isPurchase) {
+  const modal = new ModalBuilder()
+    .setCustomId(isPurchase ? 'close_modal_purchase' : 'close_modal_support')
+    .setTitle('Close Ticket');
+
+  if (isPurchase) {
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('payment_completed')
+          .setLabel('Was payment completed?')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Yes / No / Partial')
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('design_delivered')
+          .setLabel('Was the design delivered?')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Yes / No / In Progress')
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('close_notes')
+          .setLabel('Closing Notes (optional)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Any extra context, issues, or remarks...')
+          .setRequired(false)
+          .setMaxLength(500)
+      ),
+    );
+  } else {
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('issue_resolved')
+          .setLabel('Was the issue resolved?')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Yes / No / Escalated')
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('close_notes')
+          .setLabel('Closing Notes (optional)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Any extra context, outcome, or remarks...')
+          .setRequired(false)
+          .setMaxLength(500)
+      ),
+    );
+  }
+
+  return modal;
+}
+
+function buildPurchaseTicketEmbed(fields, user, orderId) {
   return new EmbedBuilder()
     .setColor(colors.primary)
-    .setTitle('📋  NEW DESIGN REQUEST')
+    .setTitle(`📋  DESIGN REQUEST  —  Order #${orderId}`)
     .addFields(
+      { name: 'Order ID', value: `#${orderId}`, inline: true },
       { name: 'Roblox Username', value: fields.roblox_username, inline: true },
       { name: 'Design Type', value: fields.design_type, inline: true },
       { name: 'Server / Department', value: fields.department, inline: true },
-      { name: 'Description', value: fields.description, inline: false },
       { name: 'Budget', value: fields.budget, inline: true },
       { name: 'Payment Status', value: '🔴  Not yet verified', inline: true },
+      { name: 'Description', value: fields.description, inline: false },
     )
     .setFooter({ text: `Opened by ${user.tag} • ${serverName}` })
     .setTimestamp();
@@ -186,31 +248,32 @@ function buildPurchaseTicketEmbed(fields, user) {
 function buildSupportTicketEmbed(fields, user) {
   return new EmbedBuilder()
     .setColor(colors.dark)
-    .setTitle('🎧  NEW SUPPORT REQUEST')
+    .setTitle('🎧  SUPPORT REQUEST')
     .addFields(
       { name: 'Subject', value: fields.subject, inline: false },
+      { name: 'Status', value: '⚪  Open — awaiting staff', inline: true },
       { name: 'Description', value: fields.description, inline: false },
     )
     .setFooter({ text: `Opened by ${user.tag} • ${serverName}` })
     .setTimestamp();
 }
 
-function buildPaymentStatusRow(currentStatus) {
+function buildStatusRow(currentStatus) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('payment_red')
+      .setCustomId('status_red')
       .setLabel('Not Verified')
       .setEmoji('🔴')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(currentStatus === 'red'),
     new ButtonBuilder()
-      .setCustomId('payment_orange')
+      .setCustomId('status_orange')
       .setLabel('Pending')
       .setEmoji('🟠')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(currentStatus === 'orange'),
     new ButtonBuilder()
-      .setCustomId('payment_green')
+      .setCustomId('status_green')
       .setLabel('Verified')
       .setEmoji('🟢')
       .setStyle(ButtonStyle.Success)
@@ -231,17 +294,16 @@ function buildCloseRow() {
 async function createPurchaseChannel(interaction, fields) {
   const guild = interaction.guild;
   const user = interaction.user;
-  const channelName = `purchase-${fields.roblox_username.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 90);
+  const orderId = await getNextOrderId(interaction.client);
+  const safeName = fields.roblox_username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+  const channelName = `⚪-order-${orderId}-${safeName}`;
 
   const ticketChannel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
-    reason: `Purchase ticket opened by ${user.tag}`,
+    reason: `Purchase ticket #${orderId} opened by ${user.tag}`,
     permissionOverwrites: [
-      {
-        id: guild.id,
-        deny: [PermissionFlagsBits.ViewChannel],
-      },
+      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: user.id,
         allow: [
@@ -277,18 +339,18 @@ async function createPurchaseChannel(interaction, fields) {
     .setColor(colors.primary)
     .setDescription(
       `👋 Hey <@${user.id}>, thanks for opening a design request!\n\n` +
-      `Please hang tight — a designer will review your request and reach out shortly.\n` +
-      `Our team typically responds within **24–72 hours**.\n\n` +
-      `Feel free to add any reference images, links, or extra details below.\n\n` +
-      `*Staff: use the payment status buttons to track this ticket.*`
+      `Your order number is **#${orderId}** — keep this handy if you need support later.\n` +
+      `A designer will review your request and reach out within **24–72 hours**.\n\n` +
+      `Feel free to drop reference images, links, or extra details below.\n\n` +
+      `*Staff: use the status buttons to track this ticket.*`
     )
     .setFooter({ text: `${serverName} • Design Tickets` });
 
-  const requestEmbed = buildPurchaseTicketEmbed(fields, user);
-  const paymentRow = buildPaymentStatusRow('red');
+  const requestEmbed = buildPurchaseTicketEmbed(fields, user, orderId);
+  const statusRow = buildStatusRow('red');
   const closeRow = buildCloseRow();
 
-  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [paymentRow, closeRow] });
+  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [statusRow, closeRow] });
 
   return ticketChannel;
 }
@@ -296,17 +358,16 @@ async function createPurchaseChannel(interaction, fields) {
 async function createSupportChannel(interaction, fields) {
   const guild = interaction.guild;
   const user = interaction.user;
-  const channelName = `support-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}-${Date.now().toString().slice(-4)}`.slice(0, 90);
+  const safeName = user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+  const suffix = Date.now().toString().slice(-4);
+  const channelName = `⚪-support-${safeName}-${suffix}`;
 
   const ticketChannel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
     reason: `Support ticket opened by ${user.tag}`,
     permissionOverwrites: [
-      {
-        id: guild.id,
-        deny: [PermissionFlagsBits.ViewChannel],
-      },
+      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: user.id,
         allow: [
@@ -334,17 +395,17 @@ async function createSupportChannel(interaction, fields) {
     .setDescription(
       `👋 Hey <@${user.id}>, your support ticket has been created!\n\n` +
       `A staff member will be with you shortly. In the meantime:\n` +
-      `• Provide any screenshots or additional context below\n` +
-      `• Keep all communication in this channel\n` +
-      `• Do not DM staff directly\n\n` +
+      `• Drop any screenshots or extra context below\n` +
+      `• Keep all communication in this channel — do not DM staff\n\n` +
       `We aim to respond within a few hours.`
     )
     .setFooter({ text: `${serverName} • Support Tickets` });
 
   const requestEmbed = buildSupportTicketEmbed(fields, user);
+  const statusRow = buildStatusRow('white');
   const closeRow = buildCloseRow();
 
-  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [closeRow] });
+  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [statusRow, closeRow] });
 
   return ticketChannel;
 }
@@ -354,9 +415,12 @@ module.exports = {
   buildSupportPanel,
   buildPurchaseModal,
   buildSupportModal,
-  buildPaymentStatusRow,
+  buildCloseModal,
+  buildStatusRow,
   buildCloseRow,
   buildPurchaseTicketEmbed,
+  buildSupportTicketEmbed,
   createPurchaseChannel,
   createSupportChannel,
+  STATUS_EMOJIS,
 };
