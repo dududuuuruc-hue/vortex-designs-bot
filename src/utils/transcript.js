@@ -1,14 +1,14 @@
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { colors, channels } = require('../config');
+const { colors, channels, serverName } = require('../config');
 
-async function generateTranscript(thread) {
+async function generateTranscript(channel) {
   const allMessages = [];
   let lastId;
 
   while (true) {
     const options = { limit: 100 };
     if (lastId) options.before = lastId;
-    const batch = await thread.messages.fetch(options);
+    const batch = await channel.messages.fetch(options);
     if (batch.size === 0) break;
     allMessages.push(...batch.values());
     lastId = batch.last().id;
@@ -17,9 +17,9 @@ async function generateTranscript(thread) {
 
   allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-  let text = `TRANSCRIPT — ${thread.name}\n`;
-  text += `Channel: ${thread.name} | ID: ${thread.id}\n`;
-  text += `Opened: ${thread.createdAt.toUTCString()}\n`;
+  let text = `TRANSCRIPT — ${channel.name}\n`;
+  text += `Channel: ${channel.name} | ID: ${channel.id}\n`;
+  text += `Opened: ${channel.createdAt.toUTCString()}\n`;
   text += `Closed: ${new Date().toUTCString()}\n`;
   text += '='.repeat(60) + '\n\n';
 
@@ -38,43 +38,44 @@ async function generateTranscript(thread) {
         }
       }
     }
+    if (msg.attachments.size) {
+      for (const att of msg.attachments.values()) {
+        text += `  [ATTACHMENT] ${att.name}: ${att.url}\n`;
+      }
+    }
     text += '\n';
   }
 
   return text;
 }
 
-async function postTranscript(client, thread, ticketData) {
+async function postTranscript(client, channel, ticketData) {
   const logChannel = await client.channels.fetch(channels.ticketLogs);
   if (!logChannel) return;
 
-  const transcriptText = await generateTranscript(thread);
+  const transcriptText = await generateTranscript(channel);
   const buffer = Buffer.from(transcriptText, 'utf-8');
-  const fileName = `transcript-${thread.name.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.txt`;
+  const fileName = `transcript-${channel.name}-${Date.now()}.txt`;
   const attachment = new AttachmentBuilder(buffer, { name: fileName });
 
   const summaryEmbed = new EmbedBuilder()
     .setColor(ticketData.type === 'purchase' ? colors.primary : colors.dark)
-    .setTitle(`📋  Ticket Closed — ${thread.name}`)
+    .setTitle(`📋  Ticket Closed — ${channel.name}`)
     .addFields(
-      { name: 'Type', value: ticketData.type === 'purchase' ? '🛒 Purchase / Design Request' : '🎧 Support', inline: true },
+      { name: 'Type', value: ticketData.type === 'purchase' ? '🛒 Design Request' : '🎧 Support', inline: true },
       { name: 'Opened By', value: `<@${ticketData.openedBy}>`, inline: true },
       { name: 'Closed By', value: ticketData.closedBy ? `<@${ticketData.closedBy}>` : 'System', inline: true },
-      { name: 'Channel', value: `<#${thread.id}>`, inline: true },
-      { name: 'Duration', value: formatDuration(thread.createdAt, new Date()), inline: true },
+      { name: 'Channel', value: `#${channel.name}`, inline: true },
+      { name: 'Duration', value: formatDuration(channel.createdAt, new Date()), inline: true },
     )
     .setTimestamp()
-    .setFooter({ text: 'Vortex Designs • Ticket Logs' });
+    .setFooter({ text: `${serverName} • Ticket Logs` });
 
   if (ticketData.robloxUsername) {
     summaryEmbed.addFields({ name: 'Roblox Username', value: ticketData.robloxUsername, inline: true });
   }
   if (ticketData.paymentStatus) {
-    const statusMap = {
-      red: '🔴 Not Verified',
-      orange: '🟠 Pending',
-      green: '🟢 Verified',
-    };
+    const statusMap = { red: '🔴 Not Verified', orange: '🟠 Pending', green: '🟢 Verified' };
     summaryEmbed.addFields({ name: 'Payment Status', value: statusMap[ticketData.paymentStatus] || 'Unknown', inline: true });
   }
 
