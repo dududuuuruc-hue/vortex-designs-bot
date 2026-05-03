@@ -1,24 +1,25 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const { colors, channels, milestones } = require('../config');
-const { getStickyMessageId, setStickyMessageId } = require('./database');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { colors, milestones } = require('../config');
 
-function buildStickyEmbeds(channelId, stickyConfig) {
+const STICKY_IDENTIFIER = 'VORTEX_STICKY';
+
+function buildStickyEmbeds(stickyConfig) {
   const ruleEmbed = new EmbedBuilder()
     .setColor(colors.primary)
     .setTitle(stickyConfig.rule)
     .setDescription(stickyConfig.restriction)
-    .setFooter({ text: 'Vortex Designs • Community Standards' });
+    .setFooter({ text: `${STICKY_IDENTIFIER} | Vortex Designs • Community Standards` });
 
   const lockEmbed = new EmbedBuilder()
     .setColor(colors.dark)
-    .setTitle('🔒  This channel is locked to **Community Member+**')
+    .setTitle('🔒  This channel is locked to Community Member+')
     .setDescription(
       `To gain access to this channel, you must:\n\n` +
       `• Send **${milestones.messageCount}+ messages** in the Discord\n` +
-      `• Be a member of our Discord server for **${milestones.membershipDays} days**\n\n` +
-      `⚠️  Messages must be genuine conversation — the bot automatically ignores bot commands and spam.`
+      `• Be a member of our server for **${milestones.membershipDays} days**\n\n` +
+      `⚠️  Messages must be genuine conversation — bot commands are automatically ignored. Engage in real conversations to count towards your role.`
     )
-    .setFooter({ text: 'Engage in real conversations to count towards your role.' });
+    .setFooter({ text: `${STICKY_IDENTIFIER} | Only you can see this` });
 
   return [ruleEmbed, lockEmbed];
 }
@@ -32,31 +33,62 @@ function buildStickyRow() {
   );
 }
 
+function isStickyMessage(msg) {
+  if (!msg.author.bot) return false;
+  for (const embed of msg.embeds) {
+    if (embed.footer?.text?.includes(STICKY_IDENTIFIER)) return true;
+  }
+  return false;
+}
+
+async function clearOldStickies(channel) {
+  let deleted = 0;
+  let lastId;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const opts = { limit: 50 };
+      if (lastId) opts.before = lastId;
+      const messages = await channel.messages.fetch(opts);
+      if (messages.size === 0) break;
+      const stickies = messages.filter(isStickyMessage);
+      for (const msg of stickies.values()) {
+        try {
+          await msg.delete();
+          deleted++;
+          await new Promise(r => setTimeout(r, 300));
+        } catch (_) {}
+      }
+      lastId = messages.last()?.id;
+      if (messages.size < 50) break;
+    } catch (_) {
+      break;
+    }
+  }
+  return deleted;
+}
+
 async function refreshSticky(client, channelId, stickyConfig) {
   try {
     const channel = await client.channels.fetch(channelId);
     if (!channel) return;
 
-    const oldId = await getStickyMessageId(client, channelId);
-    if (oldId) {
-      try {
-        const oldMsg = await channel.messages.fetch(oldId);
-        await oldMsg.delete();
-      } catch (_) {}
-    }
+    await clearOldStickies(channel);
 
-    const embeds = buildStickyEmbeds(channelId, stickyConfig);
+    await new Promise(r => setTimeout(r, 500));
+
+    const embeds = buildStickyEmbeds(stickyConfig);
     const row = buildStickyRow();
-    const newMsg = await channel.send({ embeds, components: [row] });
-    await setStickyMessageId(client, channelId, newMsg.id);
+    await channel.send({ embeds, components: [row] });
+    console.log(`[Sticky] Refreshed in #${channel.name}`);
   } catch (err) {
-    console.error(`[Sticky] Failed to refresh sticky in ${channelId}:`, err.message);
+    console.error(`[Sticky] Failed to refresh in ${channelId}:`, err.message);
   }
 }
 
 async function postAllStickies(client, stickyChannels) {
   for (const [channelId, cfg] of Object.entries(stickyChannels)) {
     await refreshSticky(client, channelId, cfg);
+    await new Promise(r => setTimeout(r, 800));
   }
 }
 
