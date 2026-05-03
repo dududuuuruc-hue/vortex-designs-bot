@@ -59,6 +59,13 @@ async function setStickyMessageId(client, channelId, messageId) {
   await writeRecord(client, `STICKY:${channelId}`, { messageId });
 }
 
+async function getNextOrderId(client) {
+  const data = await readRecord(client, 'COUNTER:orders');
+  const next = ((data?.count) || 0) + 1;
+  await writeRecord(client, 'COUNTER:orders', { count: next });
+  return String(next).padStart(3, '0');
+}
+
 module.exports = {
   readRecord,
   writeRecord,
@@ -67,4 +74,5 @@ module.exports = {
   incrementUserMessages,
   getStickyMessageId,
   setStickyMessageId,
+  getNextOrderId,
 };
