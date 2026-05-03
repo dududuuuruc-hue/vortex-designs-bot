@@ -6,6 +6,8 @@ module.exports = {
   guildId: process.env.GUILD_ID,
   databaseChannelId: process.env.DATABASE_CHANNEL_ID,
 
+  serverName: 'Division One',
+
   colors: {
     primary: 0x2B5CE6,
     dark: 0x0A0A0A,
@@ -22,6 +24,7 @@ module.exports = {
     communityMember: '1500514565773987882',
     communityMemberPlus: '1500514698758459562',
     moderator: '1500515372305092618',
+    designer: '1500543046054580394',
   },
 
   channels: {
