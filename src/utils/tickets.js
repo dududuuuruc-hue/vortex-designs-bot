@@ -9,21 +9,28 @@ const {
   ChannelType,
   PermissionFlagsBits,
 } = require('discord.js');
-const { colors, channels, roles } = require('../config');
+const { colors, channels, roles, serverName } = require('../config');
 
 function buildPurchasePanel() {
   const embed = new EmbedBuilder()
     .setColor(colors.primary)
-    .setTitle('🎨  VORTEX DESIGNS  |  Custom Design Studio')
+    .setTitle(`🎨  ${serverName.toUpperCase()}  |  Design Requests`)
     .setDescription(
-      'Welcome to the official design request center.\n' +
-      'We craft high-quality liveries, logos, and uniforms for ERLC communities — fast, affordable, and built to your exact spec.\n\n' +
-      '◾  Liveries　　◾  Logos\n◾  Uniforms　　◾  Custom Requests\n\n' +
+      'Looking for a custom design for your ER:LC community? You\'re in the right place.\n' +
+      'Our designers create high-quality, tailored liveries, logos, and uniforms — built exactly to your specifications.\n\n' +
+      '**What we offer:**\n' +
+      '◾  Vehicle Liveries　　◾  Department Logos\n' +
+      '◾  Staff Uniforms　　◾  Custom Requests\n\n' +
+      '**How it works:**\n' +
+      '`1.` Click **Open a Ticket** and fill out the form\n' +
+      '`2.` A designer will review your request and reach out\n' +
+      '`3.` Confirm your design and complete payment\n' +
+      '`4.` Receive your finished design\n\n' +
       '⏱  **Avg. turnaround:** 24–72 hours\n' +
-      '💎  **Starting from:** 200 Robux\n' +
-      '✅  **Community-trusted designs**'
+      '📋  Review our **Terms** before opening a ticket\n' +
+      '🖼  Check our **Portfolio** to see past work'
     )
-    .setFooter({ text: 'Vortex Designs • Design Request Center' })
+    .setFooter({ text: `${serverName} • Design Request Center` })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -50,14 +57,23 @@ function buildPurchasePanel() {
 function buildSupportPanel() {
   const embed = new EmbedBuilder()
     .setColor(colors.dark)
-    .setTitle('🎧  VORTEX DESIGNS  |  Support Center')
+    .setTitle(`🎧  ${serverName.toUpperCase()}  |  Support`)
     .setDescription(
-      'Need help with an order, a delivery issue, or have a question?\n' +
-      'Open a support ticket and our team will get back to you as soon as possible.\n\n' +
-      '◾  Order issues\n◾  Delivery questions\n◾  General enquiries\n◾  Disputes\n\n' +
-      '⚠️  Please **do not DM staff** — all support is handled through tickets.'
+      'Having an issue with an order or need to get in touch with staff? Open a ticket below.\n' +
+      'All support is handled privately — your ticket is only visible to you and our staff team.\n\n' +
+      '**When to open a ticket:**\n' +
+      '◾  Issue with a design order or delivery\n' +
+      '◾  Payment dispute or question\n' +
+      '◾  Designer communication issue\n' +
+      '◾  General question for staff\n' +
+      '◾  Report a community issue\n\n' +
+      '**What to expect:**\n' +
+      '`•` Staff typically respond within **a few hours**\n' +
+      '`•` Be ready to provide your Roblox username and order details\n' +
+      '`•` Keep all communication in the ticket — do not DM staff\n\n' +
+      '⚠️  Misuse of the ticket system may result in a warning or ban.'
     )
-    .setFooter({ text: 'Vortex Designs • Support Center' })
+    .setFooter({ text: `${serverName} • Support Center` })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -106,7 +122,7 @@ function buildPurchaseModal() {
         .setCustomId('description')
         .setLabel('Description')
         .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('Describe your design in detail — colors, text, badge, layout, etc.')
+        .setPlaceholder('Describe your design in detail — colors, text, badges, layout, references, etc.')
         .setRequired(true)
         .setMaxLength(1000)
     ),
@@ -142,7 +158,7 @@ function buildSupportModal() {
         .setCustomId('description')
         .setLabel('Description')
         .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('Describe your issue in detail...')
+        .setPlaceholder('Describe your issue in as much detail as possible...')
         .setRequired(true)
         .setMaxLength(1000)
     ),
@@ -152,7 +168,7 @@ function buildSupportModal() {
 }
 
 function buildPurchaseTicketEmbed(fields, user) {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(colors.primary)
     .setTitle('📋  NEW DESIGN REQUEST')
     .addFields(
@@ -161,26 +177,22 @@ function buildPurchaseTicketEmbed(fields, user) {
       { name: 'Server / Department', value: fields.department, inline: true },
       { name: 'Description', value: fields.description, inline: false },
       { name: 'Budget', value: fields.budget, inline: true },
+      { name: 'Payment Status', value: '🔴  Not yet verified', inline: true },
     )
-    .addFields({ name: 'Payment Status', value: '🔴  Not yet verified', inline: true })
-    .setFooter({ text: `Opened by ${user.tag}` })
+    .setFooter({ text: `Opened by ${user.tag} • ${serverName}` })
     .setTimestamp();
-
-  return embed;
 }
 
 function buildSupportTicketEmbed(fields, user) {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(colors.dark)
     .setTitle('🎧  NEW SUPPORT REQUEST')
     .addFields(
       { name: 'Subject', value: fields.subject, inline: false },
       { name: 'Description', value: fields.description, inline: false },
     )
-    .setFooter({ text: `Opened by ${user.tag}` })
+    .setFooter({ text: `Opened by ${user.tag} • ${serverName}` })
     .setTimestamp();
-
-  return embed;
 }
 
 function buildPaymentStatusRow(currentStatus) {
@@ -216,66 +228,125 @@ function buildCloseRow() {
   );
 }
 
-async function createPurchaseThread(interaction, fields) {
-  const channel = await interaction.client.channels.fetch(channels.shop);
+async function createPurchaseChannel(interaction, fields) {
+  const guild = interaction.guild;
   const user = interaction.user;
-  const threadName = `purchase-${fields.roblox_username}-${user.username}`.slice(0, 100);
+  const channelName = `purchase-${fields.roblox_username.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 90);
 
-  const thread = await channel.threads.create({
-    name: threadName,
-    type: ChannelType.PrivateThread,
+  const ticketChannel = await guild.channels.create({
+    name: channelName,
+    type: ChannelType.GuildText,
     reason: `Purchase ticket opened by ${user.tag}`,
-    invitable: false,
+    permissionOverwrites: [
+      {
+        id: guild.id,
+        deny: [PermissionFlagsBits.ViewChannel],
+      },
+      {
+        id: user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.AttachFiles,
+        ],
+      },
+      {
+        id: roles.moderator,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.ManageMessages,
+          PermissionFlagsBits.AttachFiles,
+        ],
+      },
+      {
+        id: roles.designer,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.AttachFiles,
+        ],
+      },
+    ],
   });
-
-  await thread.members.add(user.id);
-
-  const embed = buildPurchaseTicketEmbed(fields, user);
-  const paymentRow = buildPaymentStatusRow('red');
-  const closeRow = buildCloseRow();
 
   const infoEmbed = new EmbedBuilder()
     .setColor(colors.primary)
     .setDescription(
       `👋 Hey <@${user.id}>, thanks for opening a design request!\n\n` +
-      `A member of our team will review your request shortly.\n` +
-      `Please be patient — our designers typically respond within **24–72 hours**.\n\n` +
-      `*Staff: Use the payment status buttons below to update this ticket.*`
-    );
+      `Please hang tight — a designer will review your request and reach out shortly.\n` +
+      `Our team typically responds within **24–72 hours**.\n\n` +
+      `Feel free to add any reference images, links, or extra details below.\n\n` +
+      `*Staff: use the payment status buttons to track this ticket.*`
+    )
+    .setFooter({ text: `${serverName} • Design Tickets` });
 
-  await thread.send({ embeds: [infoEmbed, embed], components: [paymentRow, closeRow] });
+  const requestEmbed = buildPurchaseTicketEmbed(fields, user);
+  const paymentRow = buildPaymentStatusRow('red');
+  const closeRow = buildCloseRow();
 
-  return thread;
+  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [paymentRow, closeRow] });
+
+  return ticketChannel;
 }
 
-async function createSupportThread(interaction, fields) {
-  const channel = await interaction.client.channels.fetch(channels.supportTicket);
+async function createSupportChannel(interaction, fields) {
+  const guild = interaction.guild;
   const user = interaction.user;
-  const threadName = `support-${user.username}-${Date.now().toString().slice(-4)}`.slice(0, 100);
+  const channelName = `support-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}-${Date.now().toString().slice(-4)}`.slice(0, 90);
 
-  const thread = await channel.threads.create({
-    name: threadName,
-    type: ChannelType.PrivateThread,
+  const ticketChannel = await guild.channels.create({
+    name: channelName,
+    type: ChannelType.GuildText,
     reason: `Support ticket opened by ${user.tag}`,
-    invitable: false,
+    permissionOverwrites: [
+      {
+        id: guild.id,
+        deny: [PermissionFlagsBits.ViewChannel],
+      },
+      {
+        id: user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.AttachFiles,
+        ],
+      },
+      {
+        id: roles.moderator,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.ManageMessages,
+          PermissionFlagsBits.AttachFiles,
+        ],
+      },
+    ],
   });
-
-  await thread.members.add(user.id);
-
-  const embed = buildSupportTicketEmbed(fields, user);
-  const closeRow = buildCloseRow();
 
   const infoEmbed = new EmbedBuilder()
     .setColor(colors.dark)
     .setDescription(
-      `👋 Hey <@${user.id}>, your support request has been received!\n\n` +
-      `A staff member will be with you shortly.\n` +
-      `Please provide any additional details in this thread.`
-    );
+      `👋 Hey <@${user.id}>, your support ticket has been created!\n\n` +
+      `A staff member will be with you shortly. In the meantime:\n` +
+      `• Provide any screenshots or additional context below\n` +
+      `• Keep all communication in this channel\n` +
+      `• Do not DM staff directly\n\n` +
+      `We aim to respond within a few hours.`
+    )
+    .setFooter({ text: `${serverName} • Support Tickets` });
 
-  await thread.send({ embeds: [infoEmbed, embed], components: [closeRow] });
+  const requestEmbed = buildSupportTicketEmbed(fields, user);
+  const closeRow = buildCloseRow();
 
-  return thread;
+  await ticketChannel.send({ embeds: [infoEmbed, requestEmbed], components: [closeRow] });
+
+  return ticketChannel;
 }
 
 module.exports = {
@@ -286,6 +357,6 @@ module.exports = {
   buildPaymentStatusRow,
   buildCloseRow,
   buildPurchaseTicketEmbed,
-  createPurchaseThread,
-  createSupportThread,
+  createPurchaseChannel,
+  createSupportChannel,
 };
