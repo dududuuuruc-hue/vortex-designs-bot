@@ -3,10 +3,12 @@ const { colors, channels, roles, serverName } = require('../config');
 const {
   buildPurchaseModal,
   buildSupportModal,
-  buildPaymentStatusRow,
+  buildCloseModal,
+  buildStatusRow,
   buildCloseRow,
   createPurchaseChannel,
   createSupportChannel,
+  STATUS_EMOJIS,
 } = require('../utils/tickets');
 const { postTranscript } = require('../utils/transcript');
 
@@ -23,6 +25,28 @@ module.exports = {
     }
   },
 };
+
+function isStaffMember(member) {
+  return (
+    member.roles.cache.has(roles.moderator) ||
+    member.roles.cache.has(roles.designer) ||
+    member.permissions.has('ManageChannels')
+  );
+}
+
+function isPurchaseChannel(channel) {
+  return channel.name.includes('-order-');
+}
+
+async function updateChannelStatus(channel, statusKey) {
+  const emojiMap = { red: '🔴', orange: '🟠', green: '🟢', white: '⚪' };
+  const newEmoji = emojiMap[statusKey] || '⚪';
+  const currentName = channel.name;
+  const withoutEmoji = currentName.replace(/^(⚪|🔴|🟠|🟢)-/, '');
+  try {
+    await channel.setName(`${newEmoji}-${withoutEmoji}`);
+  } catch (_) {}
+}
 
 async function handleButton(interaction, client) {
   const { customId } = interaction;
@@ -44,7 +68,7 @@ async function handleButton(interaction, client) {
           .setColor(colors.primary)
           .setTitle('📋  Purchase Terms')
           .setDescription(`Please review our full purchase terms in <#${channels.purchaseTerms}>.`)
-          .setFooter({ text: serverName })
+          .setFooter({ text: serverName }),
       ],
       flags: MessageFlags.Ephemeral,
     });
@@ -58,7 +82,7 @@ async function handleButton(interaction, client) {
           .setColor(colors.primary)
           .setTitle('🖼  Portfolio')
           .setDescription(`Browse our past work in <#${channels.portfolio}>.`)
-          .setFooter({ text: serverName })
+          .setFooter({ text: serverName }),
       ],
       flags: MessageFlags.Ephemeral,
     });
@@ -80,40 +104,44 @@ async function handleButton(interaction, client) {
             `⚠️  Bot commands and spam are automatically ignored.\n` +
             `Engage in real conversations in <#${channels.general}> to build your count.`
           )
-          .setFooter({ text: `${serverName} • Community Roles` })
+          .setFooter({ text: `${serverName} • Community Roles` }),
       ],
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  if (['payment_red', 'payment_orange', 'payment_green'].includes(customId)) {
+  if (['status_red', 'status_orange', 'status_green'].includes(customId)) {
     const member = await interaction.guild.members.fetch(interaction.user.id);
-    const isStaff = member.roles.cache.has(roles.moderator) || interaction.member.permissions.has('ManageChannels');
-    if (!isStaff) {
-      await interaction.reply({ content: 'Only staff can update the payment status.', flags: MessageFlags.Ephemeral });
+    if (!isStaffMember(member)) {
+      await interaction.reply({ content: 'Only staff can update the ticket status.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     const statusKey = customId.split('_')[1];
-    const statusMap = {
-      red: '🔴  Not yet verified',
-      orange: '🟠  Payment pending — under review',
-      green: '🟢  Payment confirmed and verified',
+    const isPurchase = isPurchaseChannel(interaction.channel);
+
+    const statusLabels = {
+      red: isPurchase ? '🔴  Not yet verified' : '🔴  Awaiting staff response',
+      orange: isPurchase ? '🟠  Payment pending — under review' : '🟠  In progress',
+      green: isPurchase ? '🟢  Payment confirmed and verified' : '🟢  Resolved',
     };
-    const statusLabel = statusMap[statusKey];
+    const statusLabel = statusLabels[statusKey];
+    const fieldName = isPurchase ? 'Payment Status' : 'Status';
 
     const originalMsg = interaction.message;
-    const embedIndex = originalMsg.embeds.findIndex(e => e.title?.includes('DESIGN REQUEST'));
+    const embedIndex = originalMsg.embeds.findIndex(e =>
+      e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST')
+    );
 
     if (embedIndex >= 0) {
       const updatedEmbed = EmbedBuilder.from(originalMsg.embeds[embedIndex]);
       const fields = updatedEmbed.data.fields || [];
-      const paymentIdx = fields.findIndex(f => f.name === 'Payment Status');
-      if (paymentIdx >= 0) {
-        fields[paymentIdx] = { name: 'Payment Status', value: statusLabel, inline: true };
+      const fieldIdx = fields.findIndex(f => f.name === fieldName);
+      if (fieldIdx >= 0) {
+        fields[fieldIdx] = { name: fieldName, value: statusLabel, inline: true };
       } else {
-        updatedEmbed.addFields({ name: 'Payment Status', value: statusLabel, inline: true });
+        updatedEmbed.addFields({ name: fieldName, value: statusLabel, inline: true });
       }
 
       const newEmbeds = [...originalMsg.embeds];
@@ -121,11 +149,13 @@ async function handleButton(interaction, client) {
 
       await originalMsg.edit({
         embeds: newEmbeds,
-        components: [buildPaymentStatusRow(statusKey), buildCloseRow()],
+        components: [buildStatusRow(statusKey), buildCloseRow()],
       });
 
+      await updateChannelStatus(interaction.channel, statusKey);
+
       await interaction.reply({
-        content: `Payment status updated to **${statusLabel}** by <@${interaction.user.id}>.`,
+        content: `Status updated to **${statusLabel}** by <@${interaction.user.id}>.`,
       });
     } else {
       await interaction.reply({ content: 'Could not find the ticket embed to update.', flags: MessageFlags.Ephemeral });
@@ -135,28 +165,92 @@ async function handleButton(interaction, client) {
 
   if (customId === 'ticket_close') {
     const member = await interaction.guild.members.fetch(interaction.user.id);
-    const isStaff = member.roles.cache.has(roles.moderator) || interaction.member.permissions.has('ManageChannels');
-    if (!isStaff) {
-      await interaction.reply({ content: 'Only staff can close tickets.', flags: MessageFlags.Ephemeral });
+    if (!isStaffMember(member)) {
+      await interaction.reply({
+        content: 'Only staff (Moderator or Designer) can close tickets.',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
 
+    const isPurchase = isPurchaseChannel(interaction.channel);
+    await interaction.showModal(buildCloseModal(isPurchase));
+    return;
+  }
+}
+
+async function handleModal(interaction, client) {
+  const { customId } = interaction;
+
+  if (customId === 'purchase_ticket_modal') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const fields = {
+      roblox_username: interaction.fields.getTextInputValue('roblox_username'),
+      design_type: interaction.fields.getTextInputValue('design_type'),
+      department: interaction.fields.getTextInputValue('department'),
+      description: interaction.fields.getTextInputValue('description'),
+      budget: interaction.fields.getTextInputValue('budget'),
+    };
+    try {
+      const ticketChannel = await createPurchaseChannel(interaction, fields);
+      await interaction.editReply({
+        content: `✅  Your design request has been submitted! Head over to ${ticketChannel} to track your ticket.`,
+      });
+    } catch (err) {
+      console.error('[Ticket] Failed to create purchase channel:', err);
+      await interaction.editReply({ content: 'Failed to create your ticket. Please try again or contact staff.' });
+    }
+    return;
+  }
+
+  if (customId === 'support_ticket_modal') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const fields = {
+      subject: interaction.fields.getTextInputValue('subject'),
+      description: interaction.fields.getTextInputValue('description'),
+    };
+    try {
+      const ticketChannel = await createSupportChannel(interaction, fields);
+      await interaction.editReply({
+        content: `✅  Your support ticket has been created! Head over to ${ticketChannel} to chat with our team.`,
+      });
+    } catch (err) {
+      console.error('[Ticket] Failed to create support channel:', err);
+      await interaction.editReply({ content: 'Failed to create your ticket. Please try again or contact staff.' });
+    }
+    return;
+  }
+
+  if (customId === 'close_modal_purchase' || customId === 'close_modal_support') {
     await interaction.deferUpdate();
 
+    const isPurchase = customId === 'close_modal_purchase';
     const ticketChannel = interaction.channel;
-    const isPurchase = ticketChannel.name.startsWith('purchase-');
+
+    let closingReport;
+    if (isPurchase) {
+      const paymentCompleted = interaction.fields.getTextInputValue('payment_completed');
+      const designDelivered = interaction.fields.getTextInputValue('design_delivered');
+      const closeNotes = interaction.fields.getTextInputValue('close_notes') || 'None';
+      closingReport = { paymentCompleted, designDelivered, closeNotes };
+    } else {
+      const issueResolved = interaction.fields.getTextInputValue('issue_resolved');
+      const closeNotes = interaction.fields.getTextInputValue('close_notes') || 'None';
+      closingReport = { issueResolved, closeNotes };
+    }
 
     const allMessages = await ticketChannel.messages.fetch({ limit: 20 });
     const ticketMsg = allMessages.find(m =>
       m.embeds.some(e => e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST'))
     );
-
     const ticketEmbed = ticketMsg?.embeds.find(e =>
       e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST')
     );
 
     const robloxField = ticketEmbed?.fields?.find(f => f.name === 'Roblox Username');
+    const orderField = ticketEmbed?.fields?.find(f => f.name === 'Order ID');
     const paymentField = ticketEmbed?.fields?.find(f => f.name === 'Payment Status');
+    const statusField = ticketEmbed?.fields?.find(f => f.name === 'Status');
 
     const statusToKey = (val) => {
       if (!val) return null;
@@ -168,10 +262,12 @@ async function handleButton(interaction, client) {
     const ticketData = {
       type: isPurchase ? 'purchase' : 'support',
       openedBy: ticketChannel.permissionOverwrites.cache
-        .find(o => o.type === 1 && o.id !== interaction.user.id)?.id || interaction.user.id,
+        .find(o => o.type === 1 && o.id !== interaction.user.id)?.id || 'Unknown',
       closedBy: interaction.user.id,
       robloxUsername: robloxField?.value,
-      paymentStatus: statusToKey(paymentField?.value),
+      orderId: orderField?.value,
+      paymentStatus: statusToKey(paymentField?.value || statusField?.value),
+      closingReport,
     };
 
     const closedEmbed = new EmbedBuilder()
@@ -179,7 +275,7 @@ async function handleButton(interaction, client) {
       .setTitle('🔒  Ticket Closed')
       .setDescription(
         `This ticket was closed by <@${interaction.user.id}>.\n` +
-        `A full transcript has been saved. This channel will be deleted in **5 seconds**.`
+        `A full transcript has been saved to the logs. This channel will be deleted in **5 seconds**.`
       )
       .setTimestamp()
       .setFooter({ text: `${serverName} • Support` });
@@ -199,51 +295,5 @@ async function handleButton(interaction, client) {
         console.error('[Ticket] Failed to delete channel:', err.message);
       }
     }, 5000);
-  }
-}
-
-async function handleModal(interaction, client) {
-  const { customId } = interaction;
-
-  if (customId === 'purchase_ticket_modal') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    const fields = {
-      roblox_username: interaction.fields.getTextInputValue('roblox_username'),
-      design_type: interaction.fields.getTextInputValue('design_type'),
-      department: interaction.fields.getTextInputValue('department'),
-      description: interaction.fields.getTextInputValue('description'),
-      budget: interaction.fields.getTextInputValue('budget'),
-    };
-
-    try {
-      const ticketChannel = await createPurchaseChannel(interaction, fields);
-      await interaction.editReply({
-        content: `✅  Your design request has been submitted! Head over to ${ticketChannel} to track your ticket.`,
-      });
-    } catch (err) {
-      console.error('[Ticket] Failed to create purchase channel:', err);
-      await interaction.editReply({ content: 'Failed to create your ticket. Please try again or contact staff.' });
-    }
-    return;
-  }
-
-  if (customId === 'support_ticket_modal') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    const fields = {
-      subject: interaction.fields.getTextInputValue('subject'),
-      description: interaction.fields.getTextInputValue('description'),
-    };
-
-    try {
-      const ticketChannel = await createSupportChannel(interaction, fields);
-      await interaction.editReply({
-        content: `✅  Your support ticket has been created! Head over to ${ticketChannel} to chat with our team.`,
-      });
-    } catch (err) {
-      console.error('[Ticket] Failed to create support channel:', err);
-      await interaction.editReply({ content: 'Failed to create your ticket. Please try again or contact staff.' });
-    }
   }
 }
