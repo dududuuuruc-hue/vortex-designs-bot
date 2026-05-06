@@ -15,7 +15,8 @@ const { getNextOrderId, readRecord, writeRecord } = require('./database');
 function priceRow(p, days, label) {
   const real     = p?.real     ?? prices[`days${days}`]?.real     ?? 0;
   const inflated = p?.inflated ?? Math.ceil(real * 1.25);
-  return `> ~~${inflated.toLocaleString()} Robux~~ → **${real.toLocaleString()} Robux** — ${label}  🏷️ **20% OFF**`;
+  const link     = prices[`days${days}`]?.link;
+  return `> ~~${inflated.toLocaleString()} Robux~~ → **${real.toLocaleString()} Robux** — [${label}](${link})  🏷️ **20% OFF**`;
 }
 
 function buildShopEmbed(shopConfig) {
@@ -44,9 +45,9 @@ function buildShopEmbed(shopConfig) {
     '> Full server visibility\n' +
     '> Auto-expiry with renewal reminder DM\n\n' +
     '**📋  How to purchase:**\n' +
-    '`1.` Click **Purchase a Slot** and fill the short form\n' +
-    '`2.` Our team will confirm and create your channel\n' +
-    '`3.` Pay via the Roblox gamepass link provided\n' +
+    '`1.` Pay via the Roblox links above **first**\n' +
+    '`2.` Click **Purchase a Slot** and fill the short form\n' +
+    '`3.` Our team will verify your payment and create your channel\n' +
     '`4.` Your channel goes live immediately after verification\n';
 
   if (shopConfig?.robloxPassUrl) {
@@ -241,9 +242,11 @@ async function createPurchaseChannel(interaction, fields) {
     .setColor(colors.primary)
     .setDescription(
       `Hey <@${user.id}>, thanks for your purchase request!\n\n` +
-      `Your order number is **#${orderId}** — save this for any future support.\n` +
-      `A staff member will review your order shortly and provide the payment link.\n\n` +
-      `Feel free to drop any screenshots or extra details below.\n\n` +
+      `Your order number is **#${orderId}** — save this for any future support.\n\n` +
+      `**⚠️  PAYMENT REQUIRED FIRST**\n` +
+      `If you haven't paid yet, please do so using the links in <#${channels.shop}>.\n` +
+      `Once paid, please **upload a screenshot of your purchase** here.\n\n` +
+      `A staff member will verify your payment and set up your channel shortly.\n\n` +
       `*Only staff can close tickets.*`
     )
     .setFooter({ text: 'Bulletin • Premium Advertising' });

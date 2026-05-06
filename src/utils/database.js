@@ -8,8 +8,25 @@ async function getDbChannel(client) {
 
 async function readRecord(client, key) {
   const channel = await getDbChannel(client);
-  const messages = await channel.messages.fetch({ limit: 100 });
-  const msg = messages.find(m => m.content.startsWith(`KEY:${key}|`));
+  let messages = await channel.messages.fetch({ limit: 100 });
+  let msg = messages.find(m => m.content.startsWith(`KEY:${key}|`));
+  
+  // If not found in first 100, try fetching more (up to 300)
+  if (!msg) {
+    const lastId = messages.last()?.id;
+    if (lastId) {
+      const moreMessages = await channel.messages.fetch({ limit: 100, before: lastId });
+      msg = moreMessages.find(m => m.content.startsWith(`KEY:${key}|`));
+      if (!msg) {
+        const lastId2 = moreMessages.last()?.id;
+        if (lastId2) {
+          const evenMoreMessages = await channel.messages.fetch({ limit: 100, before: lastId2 });
+          msg = evenMoreMessages.find(m => m.content.startsWith(`KEY:${key}|`));
+        }
+      }
+    }
+  }
+
   if (!msg) return null;
   const valueStr = msg.content.split('|VALUE:')[1];
   try { return JSON.parse(valueStr); } catch { return valueStr; }
@@ -17,10 +34,23 @@ async function readRecord(client, key) {
 
 async function writeRecord(client, key, value) {
   const channel = await getDbChannel(client);
-  const messages = await channel.messages.fetch({ limit: 100 });
-  const existing = messages.find(m => m.content.startsWith(`KEY:${key}|`));
+  let messages = await channel.messages.fetch({ limit: 100 });
+  let existing = messages.find(m => m.content.startsWith(`KEY:${key}|`));
+
+  if (!existing) {
+    const lastId = messages.last()?.id;
+    if (lastId) {
+      const moreMessages = await channel.messages.fetch({ limit: 100, before: lastId });
+      existing = moreMessages.find(m => m.content.startsWith(`KEY:${key}|`));
+    }
+  }
+
   const content = `KEY:${key}|VALUE:${JSON.stringify(value)}`;
-  if (existing) { await existing.edit(content); } else { await channel.send(content); }
+  if (existing) { 
+    await existing.edit(content); 
+  } else { 
+    await channel.send(content); 
+  }
 }
 
 async function deleteRecord(client, key) {

@@ -21,10 +21,10 @@ module.exports = {
   },
 
   prices: {
-    days10:   { real: 190,  inflated: 238  },
-    days20:   { real: 280,  inflated: 350  },
-    days30:   { real: 360,  inflated: 450  },
-    days365:  { real: 3600, inflated: 4500 },
+    days10:   { real: 190,  inflated: 238,  link: 'https://www.roblox.com/catalog/135735683037759/Bulletin-Private-Channel-10-Days-20-OFF' },
+    days20:   { real: 280,  inflated: 350,  link: 'https://www.roblox.com/catalog/90096391771134/Bulletin-Private-Channel-20-Days-20-OFF' },
+    days30:   { real: 360,  inflated: 450,  link: 'https://www.roblox.com/catalog/91103385334207/Bulletin-Private-Channel-30-Days-20-OFF' },
+    days365:  { real: 3600, inflated: 4500, link: 'https://www.roblox.com/catalog/94693197140347/Bulletin-Private-channel-12-Months-20-OFF' },
     slowmode: { real: 60,   inflated: 75   },
   },
 
