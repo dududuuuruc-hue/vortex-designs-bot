@@ -1,5 +1,5 @@
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { colors, channels, serverName } = require('../config');
+const { colors, serverName } = require('../config');
 
 async function generateTranscript(channel) {
   const allMessages = [];
@@ -50,7 +50,11 @@ async function generateTranscript(channel) {
 }
 
 async function postTranscript(client, channel, ticketData) {
-  const logChannel = await client.channels.fetch(channels.ticketLogs);
+  const cfg = require('../config');
+  const logChannelId = cfg.channels.ticketLogs;
+  if (!logChannelId) return;
+
+  const logChannel = await client.channels.fetch(logChannelId);
   if (!logChannel) return;
 
   const transcriptText = await generateTranscript(channel);
@@ -63,9 +67,9 @@ async function postTranscript(client, channel, ticketData) {
 
   const summaryEmbed = new EmbedBuilder()
     .setColor(isPurchase ? colors.primary : colors.dark)
-    .setTitle(`📋  Ticket Closed — ${channel.name}`)
+    .setTitle(`Ticket Closed — ${channel.name}`)
     .addFields(
-      { name: 'Type', value: isPurchase ? '🛒 Design Request' : '🎧 Support', inline: true },
+      { name: 'Type', value: isPurchase ? 'Design Request' : 'Support', inline: true },
       { name: 'Opened By', value: `<@${ticketData.openedBy}>`, inline: true },
       { name: 'Closed By', value: ticketData.closedBy ? `<@${ticketData.closedBy}>` : 'System', inline: true },
       { name: 'Duration', value: formatDuration(channel.createdAt, new Date()), inline: true },
@@ -85,7 +89,7 @@ async function postTranscript(client, channel, ticketData) {
 
   if (ticketData.closingReport) {
     const r = ticketData.closingReport;
-    summaryEmbed.addFields({ name: '\u200B', value: '**— Staff Closing Report —**', inline: false });
+    summaryEmbed.addFields({ name: '\u200B', value: '— Staff Closing Report —', inline: false });
 
     if (isPurchase) {
       summaryEmbed.addFields(
