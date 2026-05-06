@@ -85,7 +85,7 @@ module.exports = {
   },
 
   milestones: {
-    messageCount:      20,
-    membershipMinutes: 10,
+    messageCount:      5,
+    membershipMinutes: 5,
   },
 };
