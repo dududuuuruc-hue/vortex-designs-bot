@@ -1,5 +1,5 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
-const { colors, channels, roles, serverName } = require('../config');
+const { colors, channels, roles, serverName, milestones } = require('../config');
 const {
   buildPurchaseModal,
   buildSupportModal,
@@ -11,6 +11,7 @@ const {
   STATUS_EMOJIS,
 } = require('../utils/tickets');
 const { postTranscript } = require('../utils/transcript');
+const { buildGrantModal, buildRevokeModal, handleGrantModal, handleRevokeModal } = require('../utils/paidChannels');
 
 module.exports = {
   name: 'interactionCreate',
@@ -27,10 +28,22 @@ module.exports = {
 };
 
 function isStaffMember(member) {
+  const r = require('../config').roles;
   return (
-    member.roles.cache.has(roles.moderator) ||
-    member.roles.cache.has(roles.designer) ||
+    member.roles.cache.has(r.moderator) ||
+    member.roles.cache.has(r.admin) ||
+    member.roles.cache.has(r.founder) ||
+    member.roles.cache.has(r.designer) ||
     member.permissions.has('ManageChannels')
+  );
+}
+
+function isPaymentVerifier(member) {
+  const r = require('../config').roles;
+  return (
+    member.roles.cache.has(r.paymentVerifier) ||
+    member.roles.cache.has(r.admin) ||
+    member.roles.cache.has(r.founder)
   );
 }
 
@@ -50,6 +63,7 @@ async function updateChannelStatus(channel, statusKey) {
 
 async function handleButton(interaction, client) {
   const { customId } = interaction;
+  const cfg = require('../config');
 
   if (customId === 'purchase_open_ticket') {
     await interaction.showModal(buildPurchaseModal());
@@ -66,7 +80,7 @@ async function handleButton(interaction, client) {
       embeds: [
         new EmbedBuilder()
           .setColor(colors.primary)
-          .setTitle('📋  Purchase Terms')
+          .setTitle('Purchase Terms')
           .setDescription(`Please review our full purchase terms in <#${channels.purchaseTerms}>.`)
           .setFooter({ text: serverName }),
       ],
@@ -80,7 +94,7 @@ async function handleButton(interaction, client) {
       embeds: [
         new EmbedBuilder()
           .setColor(colors.primary)
-          .setTitle('🖼  Portfolio')
+          .setTitle('Portfolio')
           .setDescription(`Browse our past work in <#${channels.portfolio}>.`)
           .setFooter({ text: serverName }),
       ],
@@ -90,24 +104,43 @@ async function handleButton(interaction, client) {
   }
 
   if (customId === 'sticky_how_to_send') {
-    const { milestones } = require('../config');
     await interaction.reply({
       embeds: [
         new EmbedBuilder()
           .setColor(colors.primary)
-          .setTitle('🔒  How to Unlock This Channel')
+          .setTitle('How to Unlock This Channel')
           .setDescription(
             `This channel requires the **Community Member+** role.\n\n` +
             `**Requirements:**\n` +
-            `• Send **${milestones.messageCount}+ genuine messages** in the server\n` +
-            `• Be a member for **${milestones.membershipDays}+ days**\n\n` +
-            `⚠️  Bot commands and spam are automatically ignored.\n` +
+            `> Send **${milestones.messageCount}+ genuine messages** in the server\n` +
+            `> Be a member for **${milestones.membershipMinutes}+ minutes**\n\n` +
+            `Bot commands and spam are automatically ignored.\n` +
             `Engage in real conversations in <#${channels.general}> to build your count.`
           )
           .setFooter({ text: `${serverName} • Community Roles` }),
       ],
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+
+  if (customId === 'pv_grant_channel') {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    if (!isPaymentVerifier(member)) {
+      await interaction.reply({ content: 'Only Payment Verifiers can use this panel.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    await interaction.showModal(buildGrantModal());
+    return;
+  }
+
+  if (customId === 'pv_revoke_channel') {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    if (!isPaymentVerifier(member)) {
+      await interaction.reply({ content: 'Only Payment Verifiers can use this panel.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    await interaction.showModal(buildRevokeModal());
     return;
   }
 
@@ -131,7 +164,7 @@ async function handleButton(interaction, client) {
 
     const originalMsg = interaction.message;
     const embedIndex = originalMsg.embeds.findIndex(e =>
-      e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST')
+      e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST') || e.title?.includes('AD CHANNEL CLAIM')
     );
 
     if (embedIndex >= 0) {
@@ -167,7 +200,7 @@ async function handleButton(interaction, client) {
     const member = await interaction.guild.members.fetch(interaction.user.id);
     if (!isStaffMember(member)) {
       await interaction.reply({
-        content: 'Only staff (Moderator or Designer) can close tickets.',
+        content: 'Only staff can close tickets.',
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -182,6 +215,16 @@ async function handleButton(interaction, client) {
 async function handleModal(interaction, client) {
   const { customId } = interaction;
 
+  if (customId === 'pv_grant_modal') {
+    await handleGrantModal(interaction, client);
+    return;
+  }
+
+  if (customId === 'pv_revoke_modal') {
+    await handleRevokeModal(interaction, client);
+    return;
+  }
+
   if (customId === 'purchase_ticket_modal') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const fields = {
@@ -194,7 +237,7 @@ async function handleModal(interaction, client) {
     try {
       const ticketChannel = await createPurchaseChannel(interaction, fields);
       await interaction.editReply({
-        content: `✅  Your design request has been submitted! Head over to ${ticketChannel} to track your ticket.`,
+        content: `Your design request has been submitted! Head over to ${ticketChannel} to track your ticket.`,
       });
     } catch (err) {
       console.error('[Ticket] Failed to create purchase channel:', err);
@@ -212,7 +255,7 @@ async function handleModal(interaction, client) {
     try {
       const ticketChannel = await createSupportChannel(interaction, fields);
       await interaction.editReply({
-        content: `✅  Your support ticket has been created! Head over to ${ticketChannel} to chat with our team.`,
+        content: `Your support ticket has been created! Head over to ${ticketChannel} to chat with our team.`,
       });
     } catch (err) {
       console.error('[Ticket] Failed to create support channel:', err);
@@ -241,10 +284,14 @@ async function handleModal(interaction, client) {
 
     const allMessages = await ticketChannel.messages.fetch({ limit: 20 });
     const ticketMsg = allMessages.find(m =>
-      m.embeds.some(e => e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST'))
+      m.embeds.some(e =>
+        e.title?.includes('DESIGN REQUEST') ||
+        e.title?.includes('SUPPORT REQUEST') ||
+        e.title?.includes('AD CHANNEL CLAIM')
+      )
     );
     const ticketEmbed = ticketMsg?.embeds.find(e =>
-      e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST')
+      e.title?.includes('DESIGN REQUEST') || e.title?.includes('SUPPORT REQUEST') || e.title?.includes('AD CHANNEL CLAIM')
     );
 
     const robloxField = ticketEmbed?.fields?.find(f => f.name === 'Roblox Username');
@@ -270,9 +317,12 @@ async function handleModal(interaction, client) {
       closingReport,
     };
 
+    const { colors, serverName } = require('../config');
+    const { EmbedBuilder } = require('discord.js');
+
     const closedEmbed = new EmbedBuilder()
       .setColor(colors.red)
-      .setTitle('🔒  Ticket Closed')
+      .setTitle('Ticket Closed')
       .setDescription(
         `This ticket was closed by <@${interaction.user.id}>.\n` +
         `A full transcript has been saved to the logs. This channel will be deleted in **5 seconds**.`
