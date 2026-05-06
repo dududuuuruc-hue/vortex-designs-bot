@@ -20,6 +20,14 @@ module.exports = {
     blurple:  0x5865F2,
   },
 
+  prices: {
+    days10:   { real: 190,  inflated: 238  },
+    days20:   { real: 280,  inflated: 350  },
+    days30:   { real: 360,  inflated: 450  },
+    days365:  { real: 3600, inflated: 4500 },
+    slowmode: { real: 60,   inflated: 75   },
+  },
+
   roles: {
     founder:            '1500560127659475014',
     admin:              '1501633633914585219',
@@ -39,6 +47,10 @@ module.exports = {
   channels: {
     general:              '1500350260172816409',
     pictures:             '1500533860826480850',
+    ideasFeedback:        '1500350260612956210',
+    directory:            '1500350260172816407',
+    discordRules:         '1500361629483929722',
+    purchaseTerms:        '1500361256681341018',
     privateServerAds:     null,
     resourceSubmissions:  null,
     ticketLogs:           '1501629536880689212',
@@ -46,7 +58,6 @@ module.exports = {
     supportTicket:        '1500548607361810643',
     botCommands:          '1500535313183805481',
     portfolio:            null,
-    purchaseTerms:        '1500361256681341018',
     paymentVerifierPanel: '1501626884805623962',
     wrongMemberCountLogs: '1501629727855874118',
     staffChat:            '1501621506193494126',
@@ -59,22 +70,22 @@ module.exports = {
   },
 
   adChannelMap: {
-    '1501632811474616441': { min: 1,    max: 50   },
-    '1501631973653741609': { min: 50,   max: 100  },
-    '1501632055065186435': { min: 100,  max: 200  },
-    '1501632115757023403': { min: 200,  max: 400  },
-    '1501632209080029257': { min: 400,  max: 800  },
-    '1501632355398451230': { min: 800,  max: 1200 },
-    '1501632392727625940': { min: 1200, max: 1600 },
-    '1501632426311421953': { min: 1600, max: 2000 },
-    '1501632481751990413': { min: 2000, max: 3000 },
-    '1501632611783544984': { min: 3000, max: 5000 },
-    '1501632646562975875': { min: 5000, max: 7000 },
-    '1501632684034756649': { min: 7000, max: Infinity },
+    '1501632811474616441': { min: 1,    max: 50,   label: '1–50 Members'      },
+    '1501631973653741609': { min: 50,   max: 100,  label: '50–100 Members'    },
+    '1501632055065186435': { min: 100,  max: 200,  label: '100–200 Members'   },
+    '1501632115757023403': { min: 200,  max: 400,  label: '200–400 Members'   },
+    '1501632209080029257': { min: 400,  max: 800,  label: '400–800 Members'   },
+    '1501632355398451230': { min: 800,  max: 1200, label: '800–1,200 Members' },
+    '1501632392727625940': { min: 1200, max: 1600, label: '1,200–1,600 Members' },
+    '1501632426311421953': { min: 1600, max: 2000, label: '1,600–2,000 Members' },
+    '1501632481751990413': { min: 2000, max: 3000, label: '2,000–3,000 Members' },
+    '1501632611783544984': { min: 3000, max: 5000, label: '3,000–5,000 Members' },
+    '1501632646562975875': { min: 5000, max: 7000, label: '5,000–7,000 Members' },
+    '1501632684034756649': { min: 7000, max: Infinity, label: '7,000+ Members' },
   },
 
   milestones: {
-    messageCount:     20,
+    messageCount:      20,
     membershipMinutes: 10,
   },
 };
