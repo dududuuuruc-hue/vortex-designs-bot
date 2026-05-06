@@ -2,123 +2,95 @@ const { ActivityType } = require('discord.js');
 const { postAllStickies } = require('../utils/sticky');
 const { buildPurchasePanel, buildSupportPanel } = require('../utils/tickets');
 const { readRecord, writeRecord } = require('../utils/database');
-const { ensureRoles, ensureChannels, postStaffGuide, postPaymentVerifierPanel } = require('../utils/serverSetup');
+const { postStaffGuide, postPaymentVerifierPanel } = require('../utils/serverSetup');
 const { checkExpiredChannels } = require('../utils/paidChannels');
+const { channels, stickyChannels: staticSticky } = require('../config');
 
 module.exports = {
   name: 'ready',
   once: true,
   async execute(client) {
     console.log(`[Bot] Logged in as ${client.user.tag}`);
-    client.user.setActivity('Division One', { type: ActivityType.Watching });
-
+    client.user.setActivity('Bulletin', { type: ActivityType.Watching });
     await sleep(2000);
     await runStartup(client);
-
-    setInterval(() => checkExpiredChannels(client, client.guilds.cache.first()), 60 * 60 * 1000);
+    setInterval(() => {
+      const guild = client.guilds.cache.first();
+      if (guild) checkExpiredChannels(client, guild).catch(console.error);
+    }, 60 * 60 * 1000);
   },
 };
 
 async function runStartup(client) {
   console.log('[Bot] Running startup tasks...');
-  const guild = client.guilds.cache.first();
-  if (!guild) { console.error('[Bot] No guild found.'); return; }
 
   try {
-    await ensureRoles(guild, client);
-    console.log('[Bot] Roles ensured.');
-  } catch (err) {
-    console.error('[Bot] Role setup error:', err.message);
-  }
+    await upsertPanel(client, 'shop', channels.shop, buildPurchasePanel);
+  } catch (err) { console.error('[Bot] Shop panel error:', err.message); }
 
   await sleep(1000);
 
   try {
-    await ensureChannels(guild, client);
-    console.log('[Bot] Channels ensured.');
-  } catch (err) {
-    console.error('[Bot] Channel setup error:', err.message);
-  }
-
-  await sleep(1000);
-
-  const cfg = require('../config');
-
-  const stickyChannels = buildStickyChannels(cfg);
-
-  try {
-    await upsertPanel(client, 'shop', cfg.channels.shop, buildPurchasePanel);
-  } catch (err) {
-    console.error('[Bot] Shop panel error:', err.message);
-  }
-
-  await sleep(1000);
-
-  try {
-    await upsertPanel(client, 'support', cfg.channels.supportTicket, buildSupportPanel);
-  } catch (err) {
-    console.error('[Bot] Support panel error:', err.message);
-  }
+    await upsertPanel(client, 'support', channels.supportTicket, buildSupportPanel);
+  } catch (err) { console.error('[Bot] Support panel error:', err.message); }
 
   await sleep(1000);
 
   try {
     await postPaymentVerifierPanel(client);
-  } catch (err) {
-    console.error('[Bot] Payment verifier panel error:', err.message);
-  }
+  } catch (err) { console.error('[Bot] Payment verifier panel error:', err.message); }
 
   await sleep(1000);
 
   try {
     await postStaffGuide(client);
-  } catch (err) {
-    console.error('[Bot] Staff guide error:', err.message);
-  }
+  } catch (err) { console.error('[Bot] Staff guide error:', err.message); }
 
   await sleep(1000);
 
-  if (Object.keys(stickyChannels).length > 0) {
+  const stickyMap = buildStickyMap();
+  if (Object.keys(stickyMap).length > 0) {
     try {
-      await postAllStickies(client, stickyChannels);
-      console.log('[Bot] All sticky messages refreshed.');
-    } catch (err) {
-      console.error('[Bot] Sticky error:', err.message);
-    }
+      await postAllStickies(client, stickyMap);
+      console.log('[Bot] Sticky messages refreshed.');
+    } catch (err) { console.error('[Bot] Sticky error:', err.message); }
   }
 
   try {
-    await checkExpiredChannels(client, guild);
-  } catch (err) {
-    console.error('[Bot] Expired channel check error:', err.message);
-  }
+    const guild = client.guilds.cache.first();
+    if (guild) await checkExpiredChannels(client, guild);
+  } catch (err) { console.error('[Bot] Expired channel check error:', err.message); }
 
   console.log('[Bot] Startup complete.');
 }
 
-function buildStickyChannels(cfg) {
+function buildStickyMap() {
+  const cfg = require('../config');
   const map = {};
-  const { channels } = cfg;
-
-  if (channels.pictures) {
-    map[channels.pictures] = {
+  if (cfg.channels.pictures) {
+    map[cfg.channels.pictures] = {
       rule: 'This channel is for sharing ERLC & design-related pictures only!',
       restriction: 'Do not post memes, unrelated images, or off-topic content.',
     };
   }
-  if (channels.privateServerAds) {
-    map[channels.privateServerAds] = {
-      rule: 'This channel is for ER:LC private server ads only!',
-      restriction: 'Do not post design servers, hubs, services, or anything other than ERLC private roleplay servers.',
+  if (cfg.channels.freeLiveries) {
+    map[cfg.channels.freeLiveries] = {
+      rule: 'This channel is for sharing free liveries only!',
+      restriction: 'Always credit the original creator. Only post liveries you made or have permission to share.',
     };
   }
-  if (channels.resourceSubmissions) {
-    map[channels.resourceSubmissions] = {
-      rule: 'This channel is for free resource submissions only!',
-      restriction: 'Always include proper credits to the original creator when submitting resources.',
+  if (cfg.channels.freeUniforms) {
+    map[cfg.channels.freeUniforms] = {
+      rule: 'This channel is for sharing free uniforms only!',
+      restriction: 'Always credit the original creator. Only post uniforms you made or have permission to share.',
     };
   }
-
+  if (cfg.channels.freeLogos) {
+    map[cfg.channels.freeLogos] = {
+      rule: 'This channel is for sharing free logos only!',
+      restriction: 'Always credit the original creator. Only post logos you made or have permission to share.',
+    };
+  }
   return map;
 }
 
@@ -133,18 +105,16 @@ async function upsertPanel(client, key, channelId, buildFn) {
     try {
       const msg = await channel.messages.fetch(existing.messageId);
       await msg.edit(panelData);
-      console.log(`[Panel] Updated existing ${key} panel (${existing.messageId})`);
+      console.log(`[Panel] Updated ${key} panel.`);
       return;
     } catch (_) {
-      console.log(`[Panel] ${key} panel message gone, reposting.`);
+      console.log(`[Panel] ${key} panel gone, reposting.`);
     }
   }
 
   const msg = await channel.send(panelData);
   await writeRecord(client, dbKey, { messageId: msg.id });
-  console.log(`[Panel] Posted new ${key} panel (${msg.id})`);
+  console.log(`[Panel] Posted ${key} panel (${msg.id})`);
 }
 
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
