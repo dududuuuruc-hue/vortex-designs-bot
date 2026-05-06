@@ -1,6 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
 const { incrementUserMessages } = require('../utils/database');
-const { refreshSticky } = require('../utils/sticky');
 const { handleAdChannelMessage } = require('../utils/adChannels');
 
 module.exports = {
@@ -15,14 +14,26 @@ module.exports = {
     const cfg = require('../config');
     const { channels, roles, milestones, colors, serverName, adChannelMap } = cfg;
 
-    const stickyMap = buildStickyMap(cfg);
-    if (stickyMap[message.channel.id]) {
-      await refreshSticky(client, message.channel.id, stickyMap[message.channel.id]);
-    }
-
     if (adChannelMap[message.channel.id]) {
       await handleAdChannelMessage(message, client);
       return;
+    }
+
+    if (channels.ideasFeedback && message.channel.id === channels.ideasFeedback) {
+      try {
+        await message.react('⭐');
+        await message.react('📝');
+        await message.react('✅');
+        await message.react('❌');
+        await message.react('⚠️');
+      } catch (_) {}
+      return;
+    }
+
+    const stickyMap = buildStickyMap(cfg);
+    if (stickyMap[message.channel.id]) {
+      const { refreshSticky } = require('../utils/sticky');
+      await refreshSticky(client, message.channel.id, stickyMap[message.channel.id]);
     }
 
     try {
@@ -61,16 +72,16 @@ module.exports = {
         }
       }
     } catch (err) {
-      console.error(`[Messages] Error processing message for ${message.author.tag}:`, err.message);
+      console.error(`[Messages] Error for ${message.author.tag}:`, err.message);
     }
   },
 };
 
 function buildStickyMap(cfg) {
   const map = {};
-  if (cfg.channels.pictures) map[cfg.channels.pictures] = { rule: 'This channel is for sharing ERLC & design-related pictures only!', restriction: 'Do not post memes, unrelated images, or off-topic content.' };
-  if (cfg.channels.freeLiveries) map[cfg.channels.freeLiveries] = { rule: 'This channel is for sharing free liveries only!', restriction: 'Always credit the original creator. Only post liveries you made or have permission to share.' };
-  if (cfg.channels.freeUniforms) map[cfg.channels.freeUniforms] = { rule: 'This channel is for sharing free uniforms only!', restriction: 'Always credit the original creator. Only post uniforms you made or have permission to share.' };
-  if (cfg.channels.freeLogos) map[cfg.channels.freeLogos] = { rule: 'This channel is for sharing free logos only!', restriction: 'Always credit the original creator. Only post logos you made or have permission to share.' };
+  if (cfg.channels.pictures)     map[cfg.channels.pictures]     = { rule: 'This channel is for sharing ERLC & design-related pictures only!',     restriction: 'Do not post memes, unrelated images, or off-topic content.' };
+  if (cfg.channels.freeLiveries) map[cfg.channels.freeLiveries] = { rule: 'This channel is for sharing free liveries only!',                       restriction: 'Always credit the original creator. Only post liveries you made or have permission to share.' };
+  if (cfg.channels.freeUniforms) map[cfg.channels.freeUniforms] = { rule: 'This channel is for sharing free uniforms only!',                       restriction: 'Always credit the original creator. Only post uniforms you made or have permission to share.' };
+  if (cfg.channels.freeLogos)    map[cfg.channels.freeLogos]    = { rule: 'This channel is for sharing free logos only!',                          restriction: 'Always credit the original creator. Only post logos you made or have permission to share.' };
   return map;
 }
