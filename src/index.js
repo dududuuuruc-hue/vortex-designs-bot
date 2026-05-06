@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 const { token } = require('./config');
 
@@ -10,8 +10,9 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+  partials: [Partials.Channel, Partials.Message, Partials.GuildMember, Partials.Reaction],
 });
 
 const eventsPath = path.join(__dirname, 'events');
