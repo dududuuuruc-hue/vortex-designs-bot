@@ -2,7 +2,7 @@ const { databaseChannelId } = require('../config');
 
 async function getDbChannel(client) {
   const channel = await client.channels.fetch(databaseChannelId);
-  if (!channel) throw new Error('Database channel not found. Check DATABASE_CHANNEL_ID in .env');
+  if (!channel) throw new Error('Database channel not found.');
   return channel;
 }
 
@@ -12,11 +12,7 @@ async function readRecord(client, key) {
   const msg = messages.find(m => m.content.startsWith(`KEY:${key}|`));
   if (!msg) return null;
   const valueStr = msg.content.split('|VALUE:')[1];
-  try {
-    return JSON.parse(valueStr);
-  } catch {
-    return valueStr;
-  }
+  try { return JSON.parse(valueStr); } catch { return valueStr; }
 }
 
 async function writeRecord(client, key, value) {
@@ -24,11 +20,7 @@ async function writeRecord(client, key, value) {
   const messages = await channel.messages.fetch({ limit: 100 });
   const existing = messages.find(m => m.content.startsWith(`KEY:${key}|`));
   const content = `KEY:${key}|VALUE:${JSON.stringify(value)}`;
-  if (existing) {
-    await existing.edit(content);
-  } else {
-    await channel.send(content);
-  }
+  if (existing) { await existing.edit(content); } else { await channel.send(content); }
 }
 
 async function deleteRecord(client, key) {
@@ -66,13 +58,39 @@ async function getNextOrderId(client) {
   return String(next).padStart(3, '0');
 }
 
+async function incrementUserViolation(client, userId) {
+  const key = `ADVIOLATION:USER:${userId}`;
+  const data = await readRecord(client, key) || { count: 0 };
+  data.count = (data.count || 0) + 1;
+  data.lastSeen = Date.now();
+  await writeRecord(client, key, data);
+  return data.count;
+}
+
+async function incrementServerViolation(client, inviteCode) {
+  const key = `ADVIOLATION:SERVER:${inviteCode}`;
+  const data = await readRecord(client, key) || { count: 0, users: [] };
+  data.count = (data.count || 0) + 1;
+  data.lastSeen = Date.now();
+  await writeRecord(client, key, data);
+  return data.count;
+}
+
+async function getUserViolationCount(client, userId) {
+  const data = await readRecord(client, `ADVIOLATION:USER:${userId}`);
+  return data?.count || 0;
+}
+
+async function getServerViolationCount(client, inviteCode) {
+  const data = await readRecord(client, `ADVIOLATION:SERVER:${inviteCode}`);
+  return data?.count || 0;
+}
+
 module.exports = {
-  readRecord,
-  writeRecord,
-  deleteRecord,
-  getUserData,
-  incrementUserMessages,
-  getStickyMessageId,
-  setStickyMessageId,
+  readRecord, writeRecord, deleteRecord,
+  getUserData, incrementUserMessages,
+  getStickyMessageId, setStickyMessageId,
   getNextOrderId,
+  incrementUserViolation, incrementServerViolation,
+  getUserViolationCount, getServerViolationCount,
 };
