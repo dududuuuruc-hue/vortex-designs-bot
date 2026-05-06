@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { colors, serverName } = require('../config');
+const { incrementUserViolation, incrementServerViolation, getUserViolationCount, getServerViolationCount } = require('./database');
 
 const INVITE_REGEX = /discord(?:\.gg|app\.com\/invite|\.com\/invite)\/([a-zA-Z0-9\-]+)/i;
 
@@ -11,9 +12,7 @@ async function resolveInviteMemberCount(inviteCode) {
     if (!res.ok) return null;
     const data = await res.json();
     return data.approximate_member_count ?? null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function getCorrectChannelId(memberCount, adChannelMap) {
@@ -21,11 +20,6 @@ function getCorrectChannelId(memberCount, adChannelMap) {
     if (memberCount >= tier.min && memberCount < tier.max) return chId;
   }
   return null;
-}
-
-function getTierLabel(tier) {
-  if (!tier) return 'unknown';
-  return tier.max === Infinity ? `${tier.min.toLocaleString()}+ members` : `${tier.min.toLocaleString()}–${tier.max.toLocaleString()} members`;
 }
 
 async function handleAdChannelMessage(message, client) {
@@ -69,7 +63,7 @@ async function handleAdChannelMessage(message, client) {
             .setColor(colors.red)
             .setTitle('Invalid Ad — No Invite Link Found')
             .setDescription(
-              `Your message in **${message.channel.name}** was removed because it didn't include a valid Discord invite link.\n\n` +
+              `Your message in **#${message.channel.name}** was removed because it didn't include a valid Discord invite link.\n\n` +
               `Include a **discord.gg/** link in your ad and try again.`
             )
             .setFooter({ text: `${serverName} • Ad Channels` }),
@@ -81,18 +75,26 @@ async function handleAdChannelMessage(message, client) {
 
   const inviteCode = match[1];
   const memberCount = await resolveInviteMemberCount(inviteCode);
-  if (memberCount === null) return;
+  if (memberCount === null) {
+    try {
+      await message.react('💙');
+      await message.react('🔥');
+    } catch (_) {}
+    return;
+  }
 
   const correctChannelId = getCorrectChannelId(memberCount, adChannelMap);
-  const currentTier = adChannelMap[message.channel.id];
   const isCorrect = correctChannelId === message.channel.id;
 
   if (!isCorrect) {
     try { await message.delete(); } catch (_) {}
 
-    const correctTier = correctChannelId ? adChannelMap[correctChannelId] : null;
-    const tierLabel = getTierLabel(correctTier);
-    const correctMention = correctChannelId ? `<#${correctChannelId}>` : 'the appropriate channel';
+    const userViolations   = await incrementUserViolation(client, message.author.id);
+    const serverViolations = await incrementServerViolation(client, inviteCode);
+
+    const correctTier    = correctChannelId ? adChannelMap[correctChannelId] : null;
+    const correctMention = correctChannelId ? `<#${correctChannelId}>` : 'no matching channel';
+    const correctLabel   = correctTier?.label ?? 'Unknown tier';
 
     try {
       await message.author.send({
@@ -101,10 +103,10 @@ async function handleAdChannelMessage(message, client) {
             .setColor(colors.red)
             .setTitle('Wrong Ad Channel')
             .setDescription(
-              `Your server ad was removed from **${message.channel.name}**.\n\n` +
-              `Your server has **${memberCount.toLocaleString()} members**, which belongs in a different channel.\n\n` +
-              `**Post your ad here instead:**\n` +
-              `> ${correctMention} — ${tierLabel}`
+              `Your server ad in **#${message.channel.name}** was removed.\n\n` +
+              `Your server has **${memberCount.toLocaleString()} members**, which belongs in a different tier.\n\n` +
+              `**Post here instead:**\n` +
+              `> ${correctMention} — ${correctLabel}`
             )
             .setFooter({ text: `${serverName} • Ad Channels` }),
         ],
@@ -114,18 +116,25 @@ async function handleAdChannelMessage(message, client) {
     if (channels.wrongMemberCountLogs) {
       try {
         const logChannel = await client.channels.fetch(channels.wrongMemberCountLogs);
+
+        const currentTier = adChannelMap[message.channel.id];
+        const currentLabel = currentTier?.label ?? 'Unknown';
+
         await logChannel.send({
           embeds: [
             new EmbedBuilder()
               .setColor(colors.orange)
-              .setTitle('Wrong Member Count Violation')
+              .setTitle('⚠️  Wrong Member Count Violation')
+              .setDescription(`A server ad was posted in the wrong tier channel and was removed.`)
               .addFields(
-                { name: 'User', value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
-                { name: 'Posted In', value: `<#${message.channel.id}>`, inline: true },
-                { name: 'Server Members', value: memberCount.toLocaleString(), inline: true },
-                { name: 'Correct Channel', value: correctMention, inline: true },
-                { name: 'Invite Code', value: `\`${inviteCode}\``, inline: true },
-                { name: 'Time', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                { name: '👤  User',              value: `<@${message.author.id}>\n${message.author.tag}\n\`${message.author.id}\``, inline: true },
+                { name: '📣  Posted In',          value: `<#${message.channel.id}>\n${currentLabel}`,                               inline: true },
+                { name: '✅  Correct Channel',    value: `${correctMention}\n${correctLabel}`,                                       inline: true },
+                { name: '👥  Server Members',     value: `**${memberCount.toLocaleString()}**`,                                      inline: true },
+                { name: '🔗  Invite Code',         value: `\`${inviteCode}\``,                                                       inline: true },
+                { name: '⏰  Time',               value: `<t:${Math.floor(Date.now() / 1000)}:F>`,                                  inline: true },
+                { name: '🔁  User Violations',    value: `This user has triggered **${userViolations}** automation${userViolations !== 1 ? 's' : ''} total.`,    inline: false },
+                { name: '🌐  Server Violations',  value: `This server's invite (\`${inviteCode}\`) has triggered **${serverViolations}** automation${serverViolations !== 1 ? 's' : ''} across all users.`, inline: false },
               )
               .setFooter({ text: `${serverName} • Moderation Logs` })
               .setTimestamp(),
@@ -133,7 +142,13 @@ async function handleAdChannelMessage(message, client) {
         });
       } catch (_) {}
     }
+    return;
   }
+
+  try {
+    await message.react('💙');
+    await message.react('🔥');
+  } catch (_) {}
 }
 
 module.exports = { handleAdChannelMessage };
