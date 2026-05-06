@@ -1,25 +1,25 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { colors, milestones } = require('../config');
+const { colors, milestones, serverName } = require('../config');
 
-const STICKY_IDENTIFIER = 'VORTEX_STICKY';
+const STICKY_IDENTIFIER = 'DIVISIONONE_STICKY';
 
 function buildStickyEmbeds(stickyConfig) {
   const ruleEmbed = new EmbedBuilder()
     .setColor(colors.primary)
     .setTitle(stickyConfig.rule)
     .setDescription(stickyConfig.restriction)
-    .setFooter({ text: `${STICKY_IDENTIFIER} | Vortex Designs • Community Standards` });
+    .setFooter({ text: `${STICKY_IDENTIFIER} | ${serverName} • Community Standards` });
 
   const lockEmbed = new EmbedBuilder()
     .setColor(colors.dark)
-    .setTitle('🔒  This channel is locked to Community Member+')
+    .setTitle('This channel is locked to Community Member+')
     .setDescription(
       `To gain access to this channel, you must:\n\n` +
-      `• Send **${milestones.messageCount}+ messages** in the Discord\n` +
-      `• Be a member of our server for **${milestones.membershipDays} days**\n\n` +
-      `⚠️  Messages must be genuine conversation — bot commands are automatically ignored. Engage in real conversations to count towards your role.`
+      `> Send **${milestones.messageCount}+ messages** in the Discord\n` +
+      `> Be a member of our server for **${milestones.membershipMinutes} minutes**\n\n` +
+      `Messages must be genuine conversation — bot commands are automatically ignored.`
     )
-    .setFooter({ text: `${STICKY_IDENTIFIER} | Only you can see this` });
+    .setFooter({ text: `${STICKY_IDENTIFIER} | ${serverName}` });
 
   return [ruleEmbed, lockEmbed];
 }
@@ -42,7 +42,6 @@ function isStickyMessage(msg) {
 }
 
 async function clearOldStickies(channel) {
-  let deleted = 0;
   let lastId;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -54,7 +53,6 @@ async function clearOldStickies(channel) {
       for (const msg of stickies.values()) {
         try {
           await msg.delete();
-          deleted++;
           await new Promise(r => setTimeout(r, 300));
         } catch (_) {}
       }
@@ -64,7 +62,6 @@ async function clearOldStickies(channel) {
       break;
     }
   }
-  return deleted;
 }
 
 async function refreshSticky(client, channelId, stickyConfig) {
@@ -73,7 +70,6 @@ async function refreshSticky(client, channelId, stickyConfig) {
     if (!channel) return;
 
     await clearOldStickies(channel);
-
     await new Promise(r => setTimeout(r, 500));
 
     const embeds = buildStickyEmbeds(stickyConfig);
